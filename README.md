@@ -1,175 +1,138 @@
-# Y86-64 流水线处理器实现
+# Y86-64 Pipelined Processor in Verilog
 
-## 概述
+![Verilog](https://img.shields.io/badge/Language-Verilog-blue.svg)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
 
-本项目实现了一个完整的 Y86-64 指令集架构的流水线处理器，包含 5 级流水线（取指、译码、执行、访存、写回），支持完整的 Y86-64 指令集，并实现了数据冒险处理、控制预测和缓存系统。
+## Overview
 
-## 项目结构
+This project presents a comprehensive implementation of a 5-stage pipelined processor for the Y86-64 instruction set architecture (ISA), developed entirely in Verilog. The processor design includes critical features such as data hazard management through forwarding, control hazard mitigation using a Return Address Stack (RAS), and a direct-mapped cache system for memory operations. It is designed to correctly execute the full range of Y86-64 instructions, demonstrating key concepts in modern computer architecture.
 
-### 主要模块
+## Key Features
 
-1. **IMEM** - 指令存储器
-   - 256 字节存储空间
-   - 预加载求和程序示例
-   - 小端序数据组织
+- **5-Stage Pipeline:** Implements Fetch (F), Decode (D), Execute (E), Memory (M), and Write-back (W) stages with corresponding pipeline registers.
+- **Full Y86-64 ISA Support:** Compatible with all standard Y86-64 instructions, including conditional moves and jumps.
+- **Data Hazard Handling:**
+  - **Full Forwarding Logic:** Implements forwarding paths from Execute, Memory, and Write-back stages to the Decode stage to minimize stalls.
+  - **Load-Use Hazard Detection:** Stalls the pipeline for one cycle when a load-use (Read-After-Write) hazard is detected.
+- **Control Hazard Handling:**
+  - **Return Address Stack (RAS):** A 16-entry stack for predicting return addresses for `call` and `ret` instructions.
+  - **Misprediction Recovery:** Flushes the pipeline and refetches the correct instruction upon a control hazard misprediction.
+- **Cache System:**
+  - **Direct-Mapped Cache:** A simple and efficient cache for the data memory (`DMEM`).
+  - **16-Byte Cache Lines:** Organizes memory into 16-byte blocks to leverage spatial locality.
+  - **Cache Coherency:** Ensures consistency between the cache and main memory.
+- **System Reset:** A global reset mechanism to initialize all registers, memories, and processor state to a known starting point.
 
-2. **DMEM** - 数据存储器
-   - 带缓存机制（16 字节缓存行）
-   - 直接映射缓存
-   - 预初始化数组数据 [0x000000d000d000d, 0x000000c000c000c0, 0x00000b000b000b00, 0x0000a000a000a000]
+## Architecture Details
 
-3. **Y86** - 处理器核心
-   - 5 级流水线实现
-   - 完整的数据转发和冒险处理
-   - 返回地址栈(RAS)预测机制
-   - 条件码和标志位管理
-   - 缓存一致性维护
+### 1. Core Modules
 
-## 功能特性
+- **`IMEM` (Instruction Memory):**
+  - 256-byte storage capacity.
+  - Pre-loaded with an example program for summing array elements.
+  - Little-endian data organization.
 
-### 先进处理器特性
+- **`DMEM` (Data Memory with Cache):**
+  - Implements a direct-mapped cache with 16-byte cache lines.
+  - Pre-initialized with an array: `[0x0d...d, 0x0c...c, 0x0b...b, 0x0a...a]`.
 
-1. **5 级流水线**
-   - 取指(F)、译码(D)、执行(E)、访存(M)、写回(W)
-   - 完整流水线寄存器实现
+- **`Y86` (Processor Core):**
+  - Contains the 5-stage pipeline logic.
+  - Manages data forwarding, hazard detection, and pipeline stalls.
+  - Implements the Return Address Stack (RAS) for control prediction.
+  - Updates condition codes (CC) and status flags (`Stat`).
 
-2. **数据冒险处理**
-   - 全路径转发逻辑
-   - 精确的写后读(RAW)冒险检测
-   - 流水线暂停机制
+### 2. Pipeline Stages
 
-3. **控制预测**
-   - 16 深度返回地址栈(RAS)
-   - 调用/返回指令预测
-   - 预测错误恢复机制
-   - 分支预测失败处理
+- **Fetch (F):** Predicts the next Program Counter (PC) and fetches the instruction from `IMEM`.
+- **Decode (D):** Decodes the instruction, reads operands from the register file, and prepares values for the next stage.
+- **Execute (E):** Performs ALU operations and evaluates conditional jump conditions.
+- **Memory (M):** Accesses the data memory (`DMEM`) for `mrmovq` and `rmmovq` instructions.
+- **Write-back (W):** Writes results back to the register file.
 
-4. **缓存系统**
-   - 16 字节缓存行
-   - 直接映射缓存
-   - 缓存一致性维护
-   - 缓存未命中处理
+## Example Program: Array Sum
 
-5. **复位系统**
-   - 完整系统复位功能
-   - 寄存器/内存初始化
-
-## 示例程序
-
-处理器预加载了一个数组求和程序：
+The processor is pre-loaded with a YAS assembly program that calculates the sum of a 4-element array.
 
 ```yas
-# 初始化
-irmovq stack, %rsp
-call main
-halt
+# Initialization
+irmovq stack, %rsp  # Initialize stack pointer
+call main           # Call the main function
+halt                # Halt the processor
 
 main:
-    irmovq array, %rdi
-    irmovq $4, %rsi
-    call sum
-    ret
+    irmovq array, %rdi  # Load array base address into %rdi
+    irmovq $4, %rsi     # Load array length (4) into %rsi
+    call sum            # Call the sum function
+    ret                 # Return from main
 
 sum:
-    irmovq $8, %r8
-    irmovq $1, %r9
-    xorq %rax, %rax
-    andq %rsi, %rsi
-    jmp test
+    irmovq $8, %r8      # Constant 8 (for address increment)
+    irmovq $1, %r9      # Constant 1 (for loop decrement)
+    xorq %rax, %rax     # Initialize sum (%rax) to 0
+    andq %rsi, %rsi     # Check if loop counter is zero
+    jmp test            # Jump to loop condition test
 
 loop:
-    mrmovq (%rdi), %r10
-    addq %r10, %rax
-    addq %r8, %rdi
-    subq %r9, %rsi
+    mrmovq (%rdi), %r10 # Read element from memory
+    addq %r10, %rax     # Add element to sum
+    addq %r8, %rdi      # Move to next element
+    subq %r9, %rsi      # Decrement loop counter
 
 test:
-    jne loop
-    ret
+    jne loop            # If counter is not zero, continue loop
+    ret                 # Return from sum
 ```
 
-程序功能：计算数组 [0x000000d000d000d, 0x000000c000c000c0, 0x00000b000b000b00, 0x0000a000a000a000] 的元素和，结果存储在 %rax 寄存器
+**Functionality:** This program computes the sum of the array `[0x0d...d, 0x0c...c, 0x0b...b, 0x0a...a]` and stores the final result in the `%rax` register.
 
-## 使用说明
+## Usage Instructions
 
-### 输入信号
+### Input Signals
 
-| 信号      | 描述                |
-|-----------|---------------------|
-| CLK       | 系统时钟            |
-| reset     | 复位信号 (高有效)   |
+| Signal  | Description                 |
+|---------|-----------------------------|
+| `CLK`   | System clock signal.        |
+| `reset` | Reset signal (active high). |
 
-### 输出信号
+### Output Signals
 
-| 信号         | 描述                     |
-|--------------|--------------------------|
-| F_predPC     | 取指阶段预测PC           |
-| D_icode      | 译码阶段指令代码         |
-| D_ifun       | 译码阶段指令功能码       |
-| D_rA         | 译码阶段寄存器A          |
-| D_rB         | 译码阶段寄存器B          |
-| D_valC       | 译码阶段常数值           |
-| D_valP       | 译码阶段下一条指令地址   |
-| E_icode      | 执行阶段指令代码         |
-| E_ifun       | 执行阶段指令功能码       |
-| E_valC       | 执行阶段常数值           |
-| E_valA       | 执行阶段操作数A          |
-| E_valB       | 执行阶段操作数B          |
-| E_dstE       | 执行阶段目标寄存器E      |
-| E_dstM       | 执行阶段目标寄存器M      |
-| M_icode      | 访存阶段指令代码         |
-| M_Cnd        | 访存阶段条件标志         |
-| M_valE       | 访存阶段ALU结果          |
-| M_valA       | 访存阶段值A             |
-| M_valC       | 访存阶段常数值           |
-| M_dstE       | 访存阶段目标寄存器E      |
-| M_dstM       | 访存阶段目标寄存器M      |
-| W_icode      | 写回阶段指令代码         |
-| W_Cnd        | 写回阶段条件标志         |
-| W_valE       | 写回阶段值E             |
-| W_valM       | 写回阶段值M             |
-| W_dstE       | 写回阶段目标寄存器E      |
-| W_dstM       | 写回阶段目标寄存器M      |
-| Stat         | 处理器状态 [1:0]         |
+The processor's internal state can be monitored through the following output signals from each pipeline stage:
 
-### 操作流程
+| Signal       | Description                               |
+|--------------|-------------------------------------------|
+| `F_predPC`   | Predicted PC in the Fetch stage.          |
+| `D_icode`    | Instruction code in the Decode stage.     |
+| `D_rA`, `D_rB` | Register operands from the Decode stage.  |
+| `E_icode`    | Instruction code in the Execute stage.    |
+| `E_valA`, `E_valB` | Operands for the ALU in Execute.      |
+| `M_icode`    | Instruction code in the Memory stage.     |
+| `M_valE`     | ALU result from the Memory stage.         |
+| `W_icode`    | Instruction code in the Write-back stage. |
+| `W_valE`, `W_valM` | Values to be written back.            |
+| `Stat`       | Processor status (`AOK`, `HLT`, `ADR`).   |
 
-1. **复位系统**
-   - 激活 reset 信号初始化所有组件
-   - 寄存器清零
-   - 内存初始化为预设值
+### Operating Procedure
 
-2. **启动执行**
-   - 提供时钟信号 CLK
-   - 处理器自动开始执行程序
+1.  **Reset the System:**
+    - Assert the `reset` signal to initialize all modules, clear registers, and load initial memory values.
+2.  **Start Execution:**
+    - Provide a `CLK` signal to begin program execution automatically.
+3.  **Monitor Execution:**
+    - Observe the output signals to trace the state of each pipeline stage.
+    - The program completes when the `Stat` output becomes `HLT`.
 
-3. **观察执行状态**
-   - 通过输出信号监控各流水线阶段状态
-   - 当 Stat 变为 HLT 时程序执行完成
+## Design Highlights
 
-## 设计亮点
-
-1. **RAS 高级实现**
-   - 多路径嵌套处理（支持16层调用）
-   - 预测错误恢复机制
-   - 状态一致性维护
-   - 投机执行协同
-
-2. **高效缓存系统**
-   - 缓存行快速访问
-   - 写回策略优化
-   - 缓存未命中处理
-
-3. **精确冒险处理**
-   - 全路径数据转发
-   - 精确的流水线控制
-   - 预测错误恢复
-
-4. **完整验证机制**
-   - 地址错误检测
-   - 非法指令处理
-   - 流水线状态监控
-
-## 合作者
-
-[@147wukong](https://github.com/147wukong)
+1.  **Advanced RAS Implementation:**
+    - Handles up to 16 nested `call` instructions.
+    - Recovers efficiently from mispredictions to maintain state consistency.
+2.  **Efficient Cache System:**
+    - Optimized for fast access with 16-byte cache lines.
+    - Includes handling for cache misses and a write-back policy.
+3.  **Precise Hazard Handling:**
+    - Full data forwarding minimizes pipeline stalls.
+    - Accurate pipeline control during hazard detection and recovery.
+4.  **Robust Verification:**
+    - Includes mechanisms for detecting invalid memory addresses and illegal instructions.
+    - Provides status monitoring for debugging and verification.
